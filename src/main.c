@@ -1,4 +1,4 @@
-// src/main.c — Phase 2 placeholder. Real task creation comes in Phase 3.
+// src/main.c — Step 3.1: traffic light cycle on onboard RGB.
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -14,17 +14,7 @@
 #include "board.h"
 #include "config.h"
 
-// Blink the onboard red LED via FreeRTOS to prove the scheduler runs.
-static void BlinkTask(void *arg)
-{
-    (void)arg;
-    for (;;) {
-        GPIOPinWrite(LED_PORT_BASE, LED_RED_PIN, LED_RED_PIN);
-        vTaskDelay(pdMS_TO_TICKS(250));
-        GPIOPinWrite(LED_PORT_BASE, LED_RED_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(250));
-    }
-}
+extern void LightTask(void *arg);
 
 static void HardwareInit(void)
 {
@@ -32,6 +22,7 @@ static void HardwareInit(void)
     SysCtlClockSet(SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL |
                    SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
 
+    // Port F: RGB LED (PF1=R, PF2=B, PF3=G)
     SysCtlPeripheralEnable(LED_PORT_PERIPH);
     while (!SysCtlPeripheralReady(LED_PORT_PERIPH)) {}
     GPIOPinTypeGPIOOutput(LED_PORT_BASE, LED_ALL_PINS);
@@ -42,21 +33,19 @@ int main(void)
 {
     HardwareInit();
 
-    xTaskCreate(BlinkTask, "Blink", STACK_SMALL, NULL, 2, NULL);
+    xTaskCreate(LightTask, "Light", STACK_MED, NULL, PRIO_LIGHT, NULL);
 
     vTaskStartScheduler();
 
-    // Should never reach here.
     for (;;) {}
     return 0;
 }
 
-// FreeRTOS hooks (required when configCHECK_FOR_STACK_OVERFLOW and
-// configUSE_MALLOC_FAILED_HOOK are enabled in FreeRTOSConfig.h)
+// FreeRTOS hooks
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 {
     (void)xTask; (void)pcTaskName;
-    for (;;) {}    // halt — set a breakpoint here in GDB
+    for (;;) {}
 }
 
 void vApplicationMallocFailedHook(void)
