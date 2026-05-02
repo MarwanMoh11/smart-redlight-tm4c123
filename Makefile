@@ -46,7 +46,9 @@ LIBS       := -L$(TIVAWARE)/driverlib/gcc -ldriver \
 PROJ_SRCS  := startup_gcc.c \
               src/main.c \
               src/light_task.c \
-              src/sensor_task.c
+              src/sensor_task.c \
+              src/violation_task.c \
+              src/log_task.c
 
 # FreeRTOS kernel sources
 RTOS_SRCS  := $(FREERTOS)/tasks.c \

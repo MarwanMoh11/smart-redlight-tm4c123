@@ -1,10 +1,11 @@
-// Step B: traffic light + HC-SR04 distance printing.
+// Step C: full traffic-light + sensor + violation + log pipeline.
 
 #include <stdbool.h>
 #include <stdint.h>
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "queue.h"
 
 #include "inc/hw_types.h"
 #include "inc/hw_memmap.h"
@@ -13,18 +14,21 @@
 #include "driverlib/uart.h"
 #include "driverlib/pin_map.h"
 
-#include "board.h"
-#include "config.h"
+#include "events.h"
 
 extern void LightTask(void *arg);
 extern void SensorTask(void *arg);
+extern void ViolationTask(void *arg);
+extern void LogTask(void *arg);
+
+QueueHandle_t xSensorEventQueue;
+QueueHandle_t xLogQueue;
 
 static void HardwareInit(void)
 {
     SysCtlClockSet(SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL |
                    SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
 
-    // RGB on Port F
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
     while (!SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOF)) {}
     GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE,
@@ -32,7 +36,6 @@ static void HardwareInit(void)
     GPIOPinWrite(GPIO_PORTF_BASE,
                  GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0);
 
-    // HC-SR04 on Port B (PB0=trig, PB1=echo)
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
     while (!SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOB)) {}
     GPIOPinTypeGPIOOutput(GPIO_PORTB_BASE, GPIO_PIN_0);
@@ -41,7 +44,6 @@ static void HardwareInit(void)
                      GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPD);
     GPIOPinWrite(GPIO_PORTB_BASE, GPIO_PIN_0, 0);
 
-    // UART0 on PA0/PA1 @ 115200
     SysCtlPeripheralEnable(SYSCTL_PERIPH_UART0);
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
     while (!SysCtlPeripheralReady(SYSCTL_PERIPH_UART0)) {}
@@ -58,8 +60,13 @@ int main(void)
 {
     HardwareInit();
 
-    xTaskCreate(LightTask,  "Light",  256, NULL, 2, NULL);
-    xTaskCreate(SensorTask, "Sensor", 512, NULL, 4, NULL);
+    xSensorEventQueue = xQueueCreate(8, sizeof(sensor_event_t));
+    xLogQueue         = xQueueCreate(16, sizeof(violation_record_t));
+
+    xTaskCreate(LightTask,     "Light", 256, NULL, 3, NULL);
+    xTaskCreate(SensorTask,    "Sens",  512, NULL, 1, NULL);
+    xTaskCreate(ViolationTask, "Viol",  256, NULL, 4, NULL);
+    xTaskCreate(LogTask,       "Log",   512, NULL, 2, NULL);
 
     vTaskStartScheduler();
     for (;;) {}

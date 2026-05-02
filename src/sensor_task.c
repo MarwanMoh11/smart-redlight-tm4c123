@@ -1,28 +1,24 @@
-// Step B: HC-SR04 distance reader. Prints over UART0 every 200ms.
+// HC-SR04 sensor task with software pedestrian filter.
+// Posts SENSOR_VEHICLE_DETECTED to xSensorEventQueue when
+// an object is present for VEHICLE_DWELL_MS_MIN to MAX,
+// then leaves.
 
 #include <stdbool.h>
 #include <stdint.h>
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "queue.h"
 
 #include "inc/hw_types.h"
 #include "inc/hw_memmap.h"
 #include "driverlib/sysctl.h"
 #include "driverlib/gpio.h"
-#include "driverlib/uart.h"
 
-static void uart_puts(const char *s) {
-    while (*s) UARTCharPut(UART0_BASE, *s++);
-}
+#include "config.h"
+#include "events.h"
 
-static void uart_dec(uint32_t v) {
-    char buf[12];
-    int n = 0;
-    if (v == 0) { UARTCharPut(UART0_BASE, '0'); return; }
-    while (v && n < 12) { buf[n++] = '0' + (v % 10); v /= 10; }
-    while (n--) UARTCharPut(UART0_BASE, buf[n]);
-}
+extern QueueHandle_t xSensorEventQueue;
 
 static uint16_t HCSR04_ReadCm(void)
 {
@@ -45,28 +41,48 @@ static uint16_t HCSR04_ReadCm(void)
         hi_count++;
     }
 
-    // Calibrated empirically: hi_count is in loop iterations,
-    // and we found 1 cm ≈ N iterations.
-    // Tune CM_PER_HI_COUNT_DIVIDER by pointing at known distances.
-    #define CM_PER_HI_COUNT_DIVIDER 250   // adjust this number
-    uint16_t cm = hi_count / CM_PER_HI_COUNT_DIVIDER;
+    uint32_t pulse_us = (hi_count * 3) / cycles_per_us;
+    uint16_t cm = pulse_us / 58;
     if (cm == 0 || cm > 400) return 0xFFFF;
     return cm;
 }
 
+typedef enum { S_IDLE, S_PRESENT } detect_state_t;
+
 void SensorTask(void *arg)
 {
     (void)arg;
-    uart_puts("\r\n=== Step B: sensor + light cycle ===\r\n\r\n");
-    uint32_t n = 0;
+    detect_state_t state = S_IDLE;
+    TickType_t entered = 0;
+    const TickType_t period = pdMS_TO_TICKS(1000 / SENSOR_POLL_HZ);
+    TickType_t last_wake = xTaskGetTickCount();
+
     for (;;) {
         uint16_t cm = HCSR04_ReadCm();
-        uart_puts("[");
-        uart_dec(n++);
-        uart_puts("] dist = ");
-        if (cm == 0xFFFF) uart_puts("OUT_OF_RANGE");
-        else { uart_dec(cm); uart_puts(" cm"); }
-        uart_puts("\r\n");
-        vTaskDelay(pdMS_TO_TICKS(500));
+        bool present = (cm != 0xFFFF) && (cm < VEHICLE_DISTANCE_CM_MAX);
+        TickType_t now = xTaskGetTickCount();
+
+        switch (state) {
+        case S_IDLE:
+            if (present) { state = S_PRESENT; entered = now; }
+            break;
+
+        case S_PRESENT:
+            if (!present) {
+                uint32_t dwell_ms = (now - entered) * portTICK_PERIOD_MS;
+                if (dwell_ms >= VEHICLE_DWELL_MS_MIN &&
+                    dwell_ms <= VEHICLE_DWELL_MS_MAX) {
+                    sensor_event_t ev = SENSOR_VEHICLE_DETECTED;
+                    xQueueSend(xSensorEventQueue, &ev, 0);
+                }
+                state = S_IDLE;
+            } else if ((now - entered) * portTICK_PERIOD_MS >
+                       VEHICLE_DWELL_MS_MAX) {
+                state = S_IDLE;   // stationary object, abandon
+            }
+            break;
+        }
+
+        vTaskDelay(period);
     }
 }

@@ -1,5 +1,5 @@
-// src/light_task.c
-// Traffic light state machine — cycles the onboard RGB LED.
+// Traffic light cycle on onboard RGB. Updates g_current_light for
+// other tasks (ViolationTask) to read.
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -15,12 +15,12 @@
 #include "config.h"
 #include "events.h"
 
-// Shared with ViolationTask. Volatile because two tasks read/write it.
 volatile light_state_t g_current_light = LIGHT_RED;
 
-static void SetLight(uint8_t color_pins)
+static void SetColor(uint8_t pins)
 {
-    GPIOPinWrite(LED_PORT_BASE, LED_ALL_PINS, color_pins);
+    GPIOPinWrite(GPIO_PORTF_BASE,
+                 GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, pins);
 }
 
 void LightTask(void *arg)
@@ -28,15 +28,15 @@ void LightTask(void *arg)
     (void)arg;
     for (;;) {
         g_current_light = LIGHT_GREEN;
-        SetLight(COLOR_GREEN);
+        SetColor(GPIO_PIN_3);
         vTaskDelay(pdMS_TO_TICKS(LIGHT_GREEN_MS));
 
         g_current_light = LIGHT_YELLOW;
-        SetLight(COLOR_YELLOW);
+        SetColor(GPIO_PIN_1 | GPIO_PIN_3);
         vTaskDelay(pdMS_TO_TICKS(LIGHT_YELLOW_MS));
 
         g_current_light = LIGHT_RED;
-        SetLight(COLOR_RED);
+        SetColor(GPIO_PIN_1);
         vTaskDelay(pdMS_TO_TICKS(LIGHT_RED_MS));
     }
 }
