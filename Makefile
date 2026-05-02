@@ -44,7 +44,8 @@ LIBS       := -L$(TIVAWARE)/driverlib/gcc -ldriver \
 # ===== Source files =====
 # Project sources (we'll add to this in Phase 3)
 PROJ_SRCS  := startup_gcc.c \
-              src/main.c
+              src/main.c \
+              src/light_task.c
 
 # FreeRTOS kernel sources
 RTOS_SRCS  := $(FREERTOS)/tasks.c \
