@@ -48,6 +48,8 @@ PROJ_SRCS  := startup_gcc.c \
               src/light_task.c \
               src/sensor_task.c \
               src/violation_task.c \
+              src/alert_task.c \
+              src/camera_task.c \
               src/log_task.c
 
 # FreeRTOS kernel sources
