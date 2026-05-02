@@ -1,4 +1,11 @@
-// Step C: full traffic-light + sensor + violation + log pipeline.
+// Smart Red Light — 6-task FreeRTOS architecture matching proposal.
+//
+// LightTask     — RGB cycle, owns g_current_light
+// SensorTask    — HC-SR04 polling + pedestrian filter
+// ViolationTask — pure dispatcher: sensor event + RED → fan-out
+// AlertTask     — visual/audible alert (flash LED + buzzer placeholder)
+// CameraTask    — ESP32-CAM capture command (UART placeholder)
+// LogTask       — timestamped UART log
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -19,9 +26,13 @@
 extern void LightTask(void *arg);
 extern void SensorTask(void *arg);
 extern void ViolationTask(void *arg);
+extern void AlertTask(void *arg);
+extern void CameraTask(void *arg);
 extern void LogTask(void *arg);
 
 QueueHandle_t xSensorEventQueue;
+QueueHandle_t xAlertQueue;
+QueueHandle_t xCameraQueue;
 QueueHandle_t xLogQueue;
 
 static void HardwareInit(void)
@@ -60,13 +71,17 @@ int main(void)
 {
     HardwareInit();
 
-    xSensorEventQueue = xQueueCreate(8, sizeof(sensor_event_t));
+    xSensorEventQueue = xQueueCreate(8,  sizeof(sensor_event_t));
+    xAlertQueue       = xQueueCreate(4,  sizeof(violation_record_t));
+    xCameraQueue      = xQueueCreate(4,  sizeof(violation_record_t));
     xLogQueue         = xQueueCreate(16, sizeof(violation_record_t));
 
-    xTaskCreate(LightTask,     "Light", 256, NULL, 3, NULL);
-    xTaskCreate(SensorTask,    "Sens",  512, NULL, 1, NULL);
-    xTaskCreate(ViolationTask, "Viol",  256, NULL, 4, NULL);
-    xTaskCreate(LogTask,       "Log",   512, NULL, 2, NULL);
+    xTaskCreate(LightTask,     "Light",  256, NULL, 3, NULL);
+    xTaskCreate(SensorTask,    "Sens",   512, NULL, 1, NULL);
+    xTaskCreate(ViolationTask, "Viol",   256, NULL, 4, NULL);
+    xTaskCreate(AlertTask,     "Alert",  256, NULL, 3, NULL);
+    xTaskCreate(CameraTask,    "Cam",    256, NULL, 2, NULL);
+    xTaskCreate(LogTask,       "Log",    512, NULL, 2, NULL);
 
     vTaskStartScheduler();
     for (;;) {}
