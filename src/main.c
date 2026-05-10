@@ -1,11 +1,5 @@
 // Smart Red Light — 6-task FreeRTOS architecture matching proposal.
-//
-// LightTask     — RGB cycle, owns g_current_light
-// SensorTask    — HC-SR04 polling + pedestrian filter
-// ViolationTask — pure dispatcher: sensor event + RED → fan-out
-// AlertTask     — visual/audible alert (flash LED + buzzer placeholder)
-// CameraTask    — ESP32-CAM capture command (UART placeholder)
-// LogTask       — timestamped UART log
+// UART access is serialized via xUartMutex.
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -13,6 +7,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
+#include "semphr.h"
 
 #include "inc/hw_types.h"
 #include "inc/hw_memmap.h"
@@ -30,10 +25,11 @@ extern void AlertTask(void *arg);
 extern void CameraTask(void *arg);
 extern void LogTask(void *arg);
 
-QueueHandle_t xSensorEventQueue;
-QueueHandle_t xAlertQueue;
-QueueHandle_t xCameraQueue;
-QueueHandle_t xLogQueue;
+QueueHandle_t     xSensorEventQueue;
+QueueHandle_t     xAlertQueue;
+QueueHandle_t     xCameraQueue;
+QueueHandle_t     xLogQueue;
+SemaphoreHandle_t xUartMutex;
 
 static void HardwareInit(void)
 {
@@ -75,6 +71,7 @@ int main(void)
     xAlertQueue       = xQueueCreate(4,  sizeof(violation_record_t));
     xCameraQueue      = xQueueCreate(4,  sizeof(violation_record_t));
     xLogQueue         = xQueueCreate(16, sizeof(violation_record_t));
+    xUartMutex        = xSemaphoreCreateMutex();
 
     xTaskCreate(LightTask,     "Light",  256, NULL, 3, NULL);
     xTaskCreate(SensorTask,    "Sens",   512, NULL, 1, NULL);
